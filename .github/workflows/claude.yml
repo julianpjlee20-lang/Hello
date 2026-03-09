@@ -4,6 +4,8 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  pull_request:
+    types: [opened, synchronize]
   issues:
     types: [opened, assigned]
   pull_request_review:
@@ -24,3 +26,13 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+```
+
+---
+
+### 更新後測試
+
+1. 更新 `claude.yml` 並 commit
+2. 回到那個 PR，重新留言：
+```
+@claude push to main
