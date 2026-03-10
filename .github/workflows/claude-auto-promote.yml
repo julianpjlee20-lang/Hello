@@ -1,0 +1,73 @@
+name: Claude Auto Promote
+
+on:
+  push:
+    branches:
+      - 'claude/issue-*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  review-and-promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only allow @claude
+        run: |
+          echo "actor=${GITHUB_ACTOR}"
+          if [ "${GITHUB_ACTOR}" != "claude[bot]" ] && [ "${GITHUB_ACTOR}" != "claude" ]; then
+            echo "Only @claude pushes may auto-promote."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch refs
+        run: |
+          git fetch origin main
+          git fetch origin "${GITHUB_REF_NAME}"
+
+      - name: Block dangerous files
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="${GITHUB_REF_NAME}"
+          BASE="origin/main"
+          git diff --name-status "$BASE..origin/$BRANCH" | tee /tmp/name-status.txt
+
+          if [ ! -s /tmp/name-status.txt ]; then
+            echo "No changes found; refusing to promote."
+            exit 1
+          fi
+
+          while IFS=$'\t' read -r status path; do
+            [ -n "$path" ] || continue
+            case "$path" in
+              .github/workflows/*|.github/actions/*)
+                echo "Blocked workflow path: $path"
+                exit 1 ;;
+              .env|.env.*|*.env)
+                echo "Blocked env file: $path"
+                exit 1 ;;
+              *.pem|*.key|*.p12|*.pfx|*.crt|*.cer|id_rsa|id_ed25519|authorized_keys)
+                echo "Blocked secret/cert/key file: $path"
+                exit 1 ;;
+              *secret*|*SECRET*|*token*|*TOKEN*|*credential*|*CREDENTIAL*)
+                echo "Blocked suspicious secret-like path: $path"
+                exit 1 ;;
+            esac
+          done < /tmp/name-status.txt
+
+      - name: Promote to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="${GITHUB_REF_NAME}"
+          git checkout main
+          git reset --hard origin/main
+          git merge --ff-only "origin/$BRANCH"
+          git push origin main
